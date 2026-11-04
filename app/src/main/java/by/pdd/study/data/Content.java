@@ -43,4 +43,13 @@ public final class Content {
         public String explanation;
         public String reference;
     }
+
+    public static final class Sign {
+        public String code;
+        public String name;
+        public String group;
+        public String meaning;
+        public String practice;
+        public String symbol;
+    }
 }

@@ -26,20 +26,25 @@ public final class ContentRepository {
     private final Content.Meta meta = new Content.Meta();
     private final List<Content.Topic> topics = new ArrayList<>();
     private final List<Content.Question> questions = new ArrayList<>();
+    private final List<Content.Sign> signs = new ArrayList<>();
+    private final List<String> signGroups = new ArrayList<>();
     private final Map<String, Content.Topic> topicsById = new LinkedHashMap<>();
     private final Map<String, Content.Question> questionsById = new LinkedHashMap<>();
+    private boolean sortByChapterNumber;
 
     public ContentRepository(Context context) {
         try {
-            load(readAsset(context));
+            load(readAsset(context, "content.json"));
+            loadTextbook(readAsset(context, "textbook.json"));
+            sortByChapterNumber = true;
         } catch (IOException | JSONException exception) {
             throw new IllegalStateException("Cannot load bundled PDD content", exception);
         }
     }
 
-    private static String readAsset(Context context) throws IOException {
+    private static String readAsset(Context context, String assetName) throws IOException {
         StringBuilder result = new StringBuilder();
-        try (InputStream stream = context.getAssets().open("content.json");
+        try (InputStream stream = context.getAssets().open(assetName);
              BufferedReader reader = new BufferedReader(new InputStreamReader(stream, StandardCharsets.UTF_8))) {
             char[] buffer = new char[8192];
             int count;
@@ -107,8 +112,134 @@ public final class ContentRepository {
         }
     }
 
+    /** Loads the long-form textbook: replaces topic lessons and adds the sign catalogue. */
+    private void loadTextbook(String json) throws JSONException {
+        JSONObject root = new JSONObject(json);
+
+        JSONArray sourceTopics = root.getJSONArray("topics");
+        for (int i = 0; i < sourceTopics.length(); i++) {
+            JSONObject item = sourceTopics.getJSONObject(i);
+            Content.Topic topic = topicsById.get(item.getString("id"));
+            if (topic == null) {
+                topic = new Content.Topic();
+                topic.id = item.getString("id");
+                topic.number = item.optString("number", "");
+                topic.shortTitle = item.optString("shortTitle", item.optString("title", ""));
+                topic.accent = item.optString("accent", "#1F5FA8");
+                topics.add(topic);
+                topicsById.put(topic.id, topic);
+            }
+            topic.title = item.getString("title");
+            if (item.has("shortTitle")) topic.shortTitle = item.getString("shortTitle");
+            topic.summary = item.getString("summary");
+            if (item.has("accent")) topic.accent = item.getString("accent");
+            if (item.has("number")) topic.number = item.getString("number");
+            topic.minutes = item.optInt("minutes", topic.minutes);
+            topic.updated = item.optBoolean("updated", topic.updated);
+            topic.sections.clear();
+            JSONArray sourceSections = item.getJSONArray("sections");
+            for (int j = 0; j < sourceSections.length(); j++) {
+                JSONObject sourceSection = sourceSections.getJSONObject(j);
+                Content.Section section = new Content.Section();
+                section.heading = sourceSection.getString("heading");
+                section.body = sourceSection.getString("body");
+                JSONArray bullets = sourceSection.getJSONArray("bullets");
+                for (int k = 0; k < bullets.length(); k++) {
+                    section.bullets.add(bullets.getString(k));
+                }
+                topic.sections.add(section);
+            }
+        }
+
+        JSONArray sourceSigns = root.getJSONArray("signs");
+        for (int i = 0; i < sourceSigns.length(); i++) {
+            JSONObject item = sourceSigns.getJSONObject(i);
+            Content.Sign sign = new Content.Sign();
+            sign.code = item.getString("code");
+            sign.name = item.getString("name");
+            sign.group = item.getString("group");
+            sign.meaning = item.getString("meaning");
+            sign.practice = item.optString("practice", "");
+            sign.symbol = item.optString("symbol", "");
+            signs.add(sign);
+            if (!signGroups.contains(sign.group)) {
+                signGroups.add(sign.group);
+            }
+        }
+
+        if (sortByChapterNumber) {
+            Collections.sort(topics, (left, right) -> {
+                int leftIndex = chapterOrder(left.number);
+                int rightIndex = chapterOrder(right.number);
+                return leftIndex != rightIndex ? Integer.compare(leftIndex, rightIndex) : left.id.compareTo(right.id);
+            });
+        }
+    }
+
+    /** "01".."27" first, then appendices "П1".."П5", then the change review. */
+    private static int chapterOrder(String value) {
+        int appendix = appendixOrder(value);
+        if (appendix >= 0) return 500 + appendix;
+        if ("2025".equals(value)) return 1000;
+        return numericPrefix(value);
+    }
+
+    private static int appendixOrder(String value) {
+        if (value == null || value.length() < 2 || value.charAt(0) != 'П') return -1;
+        return numericPrefix(value.substring(1));
+    }
+
+    private static int numericPrefix(String value) {
+        if (value == null) return Integer.MAX_VALUE;
+        StringBuilder digits = new StringBuilder();
+        for (int i = 0; i < value.length(); i++) {
+            char symbol = value.charAt(i);
+            if (!Character.isDigit(symbol)) break;
+            digits.append(symbol);
+        }
+        if (digits.length() == 0) return Integer.MAX_VALUE;
+        try {
+            return Integer.parseInt(digits.toString());
+        } catch (NumberFormatException exception) {
+            return Integer.MAX_VALUE;
+        }
+    }
+
     public Content.Meta getMeta() {
         return meta;
+    }
+
+    public List<Content.Sign> getSigns() {
+        return Collections.unmodifiableList(signs);
+    }
+
+    public List<String> getSignGroups() {
+        return Collections.unmodifiableList(signGroups);
+    }
+
+    public List<Content.Sign> signsInGroup(String group) {
+        List<Content.Sign> result = new ArrayList<>();
+        for (Content.Sign sign : signs) {
+            if (sign.group.equals(group)) {
+                result.add(sign);
+            }
+        }
+        return result;
+    }
+
+    public List<Content.Sign> searchSigns(String query) {
+        String needle = normalize(query);
+        List<Content.Sign> result = new ArrayList<>();
+        if (needle.length() < 2) {
+            return result;
+        }
+        for (Content.Sign sign : signs) {
+            String haystack = normalize(sign.code + " " + sign.name + " " + sign.meaning + " " + sign.practice);
+            if (haystack.contains(needle)) {
+                result.add(sign);
+            }
+        }
+        return result;
     }
 
     public List<Content.Topic> getTopics() {

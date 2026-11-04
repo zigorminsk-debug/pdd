@@ -7,6 +7,7 @@ from urllib.parse import urlparse
 
 ROOT = Path(__file__).resolve().parents[1]
 CONTENT = ROOT / "app/src/main/assets/content.json"
+TEXTBOOK = ROOT / "app/src/main/assets/textbook.json"
 
 
 def require(condition: bool, message: str) -> None:
@@ -63,6 +64,53 @@ def main() -> None:
 
     print(f"OK: {len(topics)} topics, {len(questions)} questions, {updated_questions} questions about updates")
     print("OK: unique IDs, four answers per question, explanations, references and official source URLs")
+    validate_textbook(set(topic_ids))
+
+
+def validate_textbook(question_topic_ids: set) -> None:
+    with TEXTBOOK.open(encoding="utf-8") as source:
+        data = json.load(source)
+
+    require(set(data) == {"topics", "signs"}, "Unexpected root textbook fields")
+    topics = data["topics"]
+    signs = data["signs"]
+    require(len(topics) == 33, f"Textbook must cover 33 sections, found {len(topics)}")
+    require({topic["id"] for topic in topics} >= question_topic_ids,
+            "Every quiz topic needs a textbook chapter")
+
+    lesson_count = 0
+    characters = 0
+    for topic in topics:
+        require(topic["title"] and topic["summary"], f"Empty textbook topic: {topic['id']}")
+        require(topic["minutes"] >= 5, f"Unrealistic reading time: {topic['id']}")
+        require(len(topic["sections"]) >= 4, f"Too few lessons: {topic['id']}")
+        for section in topic["sections"]:
+            require(section["heading"], f"Empty lesson heading: {topic['id']}")
+            require(len(section["body"]) >= 350, f"Lesson text is too short: {section['heading']}")
+            require("\n\n" in section["body"], f"Lesson lacks a commentary paragraph: {section['heading']}")
+            require(len(section["bullets"]) >= 4, f"Too few key rules: {section['heading']}")
+            lesson_count += 1
+            characters += len(section["body"]) + sum(len(bullet) for bullet in section["bullets"])
+    require(lesson_count >= 150, f"Too few lessons: {lesson_count}")
+    require(characters >= 100_000, f"Textbook text is too short: {characters} characters")
+
+    require(len(signs) >= 200, f"Sign catalogue is too small: {len(signs)}")
+    groups = {}
+    codes = set()
+    for sign in signs:
+        require(sign["code"] and sign["name"], "Sign without code or name")
+        require(sign["code"] not in codes, f"Duplicate sign code: {sign['code']}")
+        codes.add(sign["code"])
+        require(sign["group"][:1] in "1234567", f"Unknown sign group: {sign['code']}")
+        require(len(sign["meaning"]) >= 40, f"Sign meaning is too short: {sign['code']}")
+        require(len(sign["practice"]) >= 40, f"Sign practice note is too short: {sign['code']}")
+        groups[sign["group"]] = groups.get(sign["group"], 0) + 1
+    require(len(groups) == 7, f"All seven sign groups are required: {sorted(groups)}")
+    require(all(count >= 5 for count in groups.values()), f"A sign group is too small: {groups}")
+
+    print(f"OK: {len(topics)} textbook chapters, {lesson_count} lessons, {characters} characters")
+    print("OK: " + ", ".join(f"{group.split('.')[0]} — {count}" for group, count in sorted(groups.items()))
+          + f" sign cards ({len(signs)} total)")
 
 
 if __name__ == "__main__":

@@ -130,7 +130,7 @@ public final class MainActivity extends Activity {
         bottomNavigation.setBackgroundColor(Color.WHITE);
         bottomNavigation.setElevation(Ui.dp(this, 12));
         String[] icons = {"home", "book", "test", "user"};
-        String[] labels = {"Главная", "Правила", "Тесты", "Профиль"};
+        String[] labels = {"Главная", "Учебник", "Тесты", "Профиль"};
         for (int i = 0; i < labels.length; i++) {
             final int tab = i;
             LinearLayout item = Ui.column(this);
@@ -378,8 +378,8 @@ public final class MainActivity extends Activity {
     private void showRules() {
         quiz = null;
         LinearLayout page = Ui.column(this);
-        addMainHeader(page, "Правила", "Кратко о главном, со ссылками на пункты", true);
-        EditText search = searchField("Найти правило или вопрос");
+        addMainHeader(page, "Учебник", "33 раздела, 170 уроков и справочник знаков", true);
+        EditText search = searchField("Найти правило, знак или вопрос");
         search.setFocusable(false);
         Ui.clickable(search, view -> showSearch());
         Ui.add(page, search, ViewGroup.LayoutParams.MATCH_PARENT, Ui.dp(this, 52), 0, 20, 0, 0);
@@ -398,12 +398,157 @@ public final class MainActivity extends Activity {
         Ui.clickable(update, view -> showTopic(repository.topic("changes"), TAB_RULES));
         page.addView(update);
 
+        LinearLayout signsCard = Ui.card(this);
+        signsCard.setBackground(Ui.ripple(this, Color.WHITE, 20));
+        LinearLayout signsRow = Ui.row(this);
+        LinearLayout signsIcon = iconButton("road", Ui.GREEN, Ui.MINT);
+        signsRow.addView(signsIcon, new LinearLayout.LayoutParams(Ui.dp(this, 46), Ui.dp(this, 46)));
+        LinearLayout signsText = Ui.column(this);
+        signsText.addView(Ui.text(this, "Дорожные знаки", 17, Ui.INK, true));
+        String signCaption = repository.getSigns().size()
+                + " карточек всех семи групп: значение и разбор на дороге";
+        Ui.add(signsText, Ui.text(this, signCaption, 12, Ui.MUTED, false),
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT, 0, 4, 0, 0);
+        Ui.addWeight(signsRow, signsText, 1, 12, 0, 0, 0);
+        signsRow.addView(Ui.icon(this, "next", Ui.MUTED, 20));
+        signsCard.addView(signsRow);
+        Ui.clickable(signsCard, view -> showSignGroups());
+        Ui.add(page, signsCard, ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT, 0, 18, 0, 0);
+
+        boolean hasAppendix = false;
+        for (Content.Topic topic : repository.getTopics()) {
+            if (topic.number != null && topic.number.startsWith("П")) hasAppendix = true;
+        }
+        if (hasAppendix) {
+            Ui.add(page, Ui.text(this, "Последние разделы списка — приложения к ПДД и обзор изменений 2025 года.", 12, Ui.MUTED, false),
+                    ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT, 0, 16, 0, 0);
+        }
         addSectionHeading(page, "Все разделы", store.readCount() + " из "
                 + repository.getTopics().size() + " прочитано");
         for (Content.Topic topic : repository.getTopics()) {
             page.addView(topicCard(topic));
         }
         setScreen("rules", TAB_RULES, true, scrollScreen(page, true));
+    }
+
+    private void showSignGroups() {
+        quiz = null;
+        LinearLayout page = Ui.column(this);
+        addBackHeader(page, "Дорожные знаки", this::showRules);
+        Ui.add(page, Ui.text(this, "Справочник знаков", 28, Ui.INK, true),
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT, 0, 14, 0, 0);
+        Ui.add(page, Ui.text(this, repository.getSigns().size()
+                        + " знаков и табличек по приложению 2 к ПДД. У каждого — значение и разбор на дороге.",
+                        14, Ui.MUTED, false),
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT, 0, 8, 0, 0);
+
+        EditText search = searchField("Номер или название: 3.20, обгон, парковка");
+        Ui.add(page, search, ViewGroup.LayoutParams.MATCH_PARENT, Ui.dp(this, 52), 0, 16, 0, 0);
+        Button searchAll = Ui.button(this, "Искать по всем знакам", false);
+        Ui.clickable(searchAll, view -> {
+            String query = search.getText().toString().trim();
+            if (query.isEmpty()) {
+                Toast.makeText(this, "Введите номер или слово", Toast.LENGTH_SHORT).show();
+            } else {
+                showSignSearch(query, false);
+            }
+        });
+        Ui.add(page, searchAll, ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT, 0, 8, 0, 0);
+
+        addSectionHeading(page, "Группы знаков", "Приложение 2 к ПДД");
+        for (String group : repository.getSignGroups()) {
+            int count = repository.signsInGroup(group).size();
+            LinearLayout card = Ui.card(this);
+            card.setBackground(Ui.ripple(this, Color.WHITE, 18));
+            LinearLayout row = Ui.row(this);
+            LinearLayout middle = Ui.column(this);
+            middle.addView(Ui.text(this, group, 15, Ui.INK, true));
+            Ui.add(middle, Ui.text(this, count + (count % 10 == 1 && count % 100 != 11
+                            ? " знак" : (count % 10 >= 2 && count % 10 <= 4 && (count % 100 < 12 || count % 100 > 14)
+                            ? " знака" : " знаков")) + " · значение и практика", 12, Ui.MUTED, false),
+                    ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT, 0, 4, 0, 0);
+            Ui.addWeight(row, middle, 1, 0, 0, 0, 0);
+            row.addView(Ui.icon(this, "next", Ui.MUTED, 20));
+            card.addView(row);
+            Ui.clickable(card, view -> showSignGroup(group));
+            Ui.add(page, card, ViewGroup.LayoutParams.MATCH_PARENT,
+                    ViewGroup.LayoutParams.WRAP_CONTENT, 0, 10, 0, 0);
+        }
+        setScreen("signs", TAB_RULES, false, scrollScreen(page, true));
+    }
+
+    private void showSignGroup(String group) {
+        LinearLayout page = Ui.column(this);
+        addBackHeader(page, "Знаки", this::showSignGroups);
+        List<Content.Sign> signs = repository.signsInGroup(group);
+        Ui.add(page, Ui.text(this, group, 26, Ui.INK, true),
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT, 0, 14, 0, 0);
+        Ui.add(page, Ui.text(this, signs.size() + " знаков · развёрнутое значение и практика", 13, Ui.MUTED, false),
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT, 0, 8, 0, 0);
+        for (Content.Sign sign : signs) {
+            Ui.add(page, signCard(sign), ViewGroup.LayoutParams.MATCH_PARENT,
+                    ViewGroup.LayoutParams.WRAP_CONTENT, 0, 10, 0, 0);
+        }
+        setScreen("sign-group", TAB_RULES, false, scrollScreen(page, true));
+    }
+
+    private void showSignSearch(String query, boolean fromTopic) {
+        LinearLayout page = Ui.column(this);
+        addBackHeader(page, "Поиск знаков", fromTopic ? this::showRules : this::showSignGroups);
+        List<Content.Sign> signs = repository.searchSigns(query);
+        Ui.add(page, Ui.text(this, "«" + query + "»", 24, Ui.INK, true),
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT, 0, 14, 0, 0);
+        Ui.add(page, Ui.text(signs.size() == 0
+                        ? "Совпадений нет. Попробуйте номер знака или одно слово из названия."
+                        : "Найдено знаков: " + signs.size(), 13, Ui.MUTED, false),
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT, 0, 8, 0, 0);
+        for (Content.Sign sign : signs) {
+            Ui.add(page, signCard(sign), ViewGroup.LayoutParams.MATCH_PARENT,
+                    ViewGroup.LayoutParams.WRAP_CONTENT, 0, 10, 0, 0);
+        }
+        setScreen("sign-search", TAB_RULES, false, scrollScreen(page, true));
+    }
+
+    private LinearLayout signCard(Content.Sign sign) {
+        LinearLayout card = Ui.card(this);
+        LinearLayout header = Ui.row(this);
+        TextView badge = Ui.text(this, sign.symbol, 13, Color.WHITE, true);
+        badge.setGravity(Gravity.CENTER);
+        badge.setBackground(Ui.roundDp(this, signColor(sign.group), 13));
+        header.addView(badge, new LinearLayout.LayoutParams(Math.max(Ui.dp(this, 46), Ui.dp(this, 12 + sign.symbol.length() * 9)),
+                Ui.dp(this, 42)));
+        LinearLayout titles = Ui.column(this);
+        titles.addView(Ui.text(this, "Знак " + sign.code, 12, signColor(sign.group), true));
+        Ui.add(titles, Ui.text(this, sign.name, 17, Ui.INK, true),
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT, 0, 3, 0, 0);
+        Ui.addWeight(header, titles, 1, 12, 0, 0, 0);
+        card.addView(header);
+        Ui.add(card, Ui.divider(this), ViewGroup.LayoutParams.MATCH_PARENT, 1, 0, 12, 0, 0);
+        Ui.add(card, Ui.text(this, sign.meaning, 14, Ui.INK, false),
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT, 0, 12, 0, 0);
+        LinearLayout practice = Ui.column(this);
+        practice.setPadding(Ui.dp(this, 12), Ui.dp(this, 10), Ui.dp(this, 12), Ui.dp(this, 10));
+        practice.setBackground(Ui.roundDp(this, Ui.MINT, 12));
+        practice.addView(Ui.label(this, "На дороге"));
+        Ui.add(practice, Ui.text(this, sign.practice, 13, Ui.INK, false),
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT, 0, 6, 0, 0);
+        Ui.add(card, practice, ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT,
+                0, 12, 0, 0);
+        Ui.add(card, Ui.text(this, sign.group, 11, Ui.MUTED, false),
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT, 0, 10, 0, 0);
+        return card;
+    }
+
+    private static int signColor(String group) {
+        if (group.startsWith("1")) return Color.rgb(178, 58, 52);
+        if (group.startsWith("2")) return Color.rgb(186, 108, 24);
+        if (group.startsWith("3")) return Color.rgb(52, 92, 140);
+        if (group.startsWith("4")) return Color.rgb(38, 116, 168);
+        if (group.startsWith("5")) return Color.rgb(30, 104, 82);
+        if (group.startsWith("6")) return Color.rgb(64, 80, 140);
+        return Color.rgb(90, 98, 94);
     }
 
     private EditText searchField(String hint) {
@@ -444,9 +589,12 @@ public final class MainActivity extends Activity {
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT, 0, 12, 0, 0);
 
         LinearLayout actions = Ui.row(this);
-        Button practice = Ui.button(this, "Тренировка · " + repository.questionsForTopic(topic.id).size(), true);
+        List<Content.Question> topicQuestions = repository.questionsForTopic(topic.id);
+        Button practice = Ui.button(this, topicQuestions.isEmpty() ? "Тренировка по всем темам"
+                : "Тренировка · " + topicQuestions.size(), true);
         Ui.clickable(practice, view -> startQuiz(topic.shortTitle,
-                repository.questionsForTopic(topic.id), false, topicBackTarget));
+                topicQuestions.isEmpty() ? repository.createExam(System.currentTimeMillis(), 10) : topicQuestions,
+                false, topicBackTarget));
         Ui.addWeight(actions, practice, 1, 0, 0, 10, 0);
         LinearLayout favorite = iconButton("bookmark", store.isFavorite(topic.id) ? Color.WHITE : Ui.GREEN,
                 store.isFavorite(topic.id) ? Ui.GREEN : Ui.MINT);
@@ -491,7 +639,7 @@ public final class MainActivity extends Activity {
         });
         Ui.add(page, markRead, ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT,
                 0, 8, 0, 0);
-        TextView note = Ui.text(this, "Конспект не заменяет полный официальный текст. Ссылка на нормативный акт — в профиле.",
+        TextView note = Ui.text(this, "Учебник объясняет нормы, но не заменяет официальный текст ПДД. Ссылка на нормативный акт — в профиле.",
                 11, Ui.MUTED, false);
         note.setGravity(Gravity.CENTER);
         Ui.add(page, note, ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT,
@@ -1095,7 +1243,7 @@ public final class MainActivity extends Activity {
         results.removeAllViews();
         String normalized = query.trim();
         if (normalized.isEmpty()) {
-            TextView hint = Ui.text(this, "Ищите по конспектам, вопросам и пояснениям. Раскладка с «е» также находит слова с «ё».",
+            TextView hint = Ui.text(this, "Ищите по главам учебника, знакам, вопросам и пояснениям. Раскладка с «е» также находит слова с «ё».",
                     14, Ui.MUTED, false);
             hint.setGravity(Gravity.CENTER);
             results.addView(hint, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT,
@@ -1104,7 +1252,8 @@ public final class MainActivity extends Activity {
         }
         List<Content.Topic> topics = repository.searchTopics(normalized);
         List<Content.Question> questions = repository.searchQuestions(normalized);
-        if (topics.isEmpty() && questions.isEmpty()) {
+        if (topics.isEmpty() && questions.isEmpty()
+                && repository.searchSigns(normalized).isEmpty()) {
             TextView empty = Ui.text(this, "Ничего не найдено. Попробуйте другое слово.", 15, Ui.MUTED, false);
             empty.setGravity(Gravity.CENTER);
             Ui.add(results, empty, ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT,
@@ -1115,6 +1264,19 @@ public final class MainActivity extends Activity {
             results.addView(Ui.label(this, "Разделы · " + topics.size()));
             Ui.add(results, Ui.space(this, 10), 1, 1, 0, 0, 0, 0);
             for (Content.Topic topic : topics) results.addView(topicCard(topic));
+        }
+        List<Content.Sign> signs = repository.searchSigns(normalized);
+        if (!signs.isEmpty()) {
+            results.addView(Ui.label(this, "Знаки · " + signs.size()));
+            Ui.add(results, Ui.space(this, 10), 1, 1, 0, 0, 0, 0);
+            int signLimit = Math.min(signs.size(), 8);
+            for (int i = 0; i < signLimit; i++) results.addView(signCard(signs.get(i)));
+            if (signs.size() > signLimit) {
+                Button allSigns = Ui.button(this, "Все найденные знаки · " + signs.size(), false);
+                Ui.clickable(allSigns, view -> showSignSearch(normalized, true));
+                Ui.add(results, allSigns, ViewGroup.LayoutParams.MATCH_PARENT,
+                        ViewGroup.LayoutParams.WRAP_CONTENT, 0, 2, 0, 8);
+            }
         }
         if (!questions.isEmpty()) {
             results.addView(Ui.label(this, "Вопросы · " + questions.size()));
@@ -1356,6 +1518,12 @@ public final class MainActivity extends Activity {
             showTests();
         } else if ("search".equals(screen)) {
             showRules();
+        } else if ("signs".equals(screen)) {
+            showRules();
+        } else if ("sign-group".equals(screen)) {
+            showSignGroups();
+        } else if ("sign-search".equals(screen)) {
+            showSignGroups();
         } else if ("result".equals(screen)) {
             showTests();
         } else if (activeTab != TAB_HOME) {

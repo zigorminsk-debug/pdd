@@ -19,3 +19,7 @@ artifacts/
 # permanent self-signed release identity. See README.md before publishing publicly.
 !signing/pdd-release.p12
 !keystore.properties
+
+# Python
+__pycache__/
+*.pyc
