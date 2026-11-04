@@ -1,6 +1,7 @@
 package by.pdd.study.update;
 
 import android.app.Activity;
+import android.content.ActivityNotFoundException;
 import android.content.ClipData;
 import android.content.Intent;
 import android.content.pm.PackageInfo;
@@ -10,6 +11,7 @@ import android.os.Build;
 import android.os.Handler;
 import android.os.Looper;
 import android.provider.Settings;
+import android.widget.Toast;
 
 import org.json.JSONException;
 import org.json.JSONObject;
@@ -156,12 +158,27 @@ public final class UpdateManager {
 
     public void install(File apk) {
         Uri uri = UpdateApkProvider.uriForApk(activity, apk);
-        Intent intent = new Intent(Intent.ACTION_INSTALL_PACKAGE);
-        intent.setData(uri);
-        intent.setType("application/vnd.android.package-archive");
+        // MIUI/HyperOS and some AOSP builds do not register ACTION_INSTALL_PACKAGE,
+        // while the standard ACTION_VIEW APK handler is available.
+        if (tryInstall(uri, Intent.ACTION_VIEW)) return;
+        if (tryInstall(uri, Intent.ACTION_INSTALL_PACKAGE)) return;
+        Toast.makeText(activity,
+                "Системный установщик APK не найден или запретил установку. "
+                        + "Проверьте разрешение на установку из этого источника.",
+                Toast.LENGTH_LONG).show();
+    }
+
+    private boolean tryInstall(Uri uri, String action) {
+        Intent intent = new Intent(action);
+        intent.setDataAndType(uri, "application/vnd.android.package-archive");
         intent.setClipData(ClipData.newRawUri("Verified PDD update", uri));
         intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION | Intent.FLAG_ACTIVITY_NEW_TASK);
-        activity.startActivity(intent);
+        try {
+            activity.startActivity(intent);
+            return true;
+        } catch (ActivityNotFoundException | SecurityException exception) {
+            return false;
+        }
     }
 
     private void verifyApk(File apk, int expectedVersionCode)
