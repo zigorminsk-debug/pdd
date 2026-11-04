@@ -163,7 +163,7 @@ public final class Ui {
         parent.addView(child, params);
     }
 
-    public static void clickable(View view, OnClickListener listener) {
+    public static void clickable(View view, View.OnClickListener listener) {
         view.setClickable(true);
         view.setFocusable(true);
         view.setOnClickListener(listener);
