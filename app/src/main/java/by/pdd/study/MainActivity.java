@@ -500,9 +500,10 @@ public final class MainActivity extends Activity {
         List<Content.Sign> signs = repository.searchSigns(query);
         Ui.add(page, Ui.text(this, "«" + query + "»", 24, Ui.INK, true),
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT, 0, 14, 0, 0);
-        Ui.add(page, Ui.text(signs.size() == 0
-                        ? "Совпадений нет. Попробуйте номер знака или одно слово из названия."
-                        : "Найдено знаков: " + signs.size(), 13, Ui.MUTED, false),
+        String summary = signs.isEmpty()
+                ? "Совпадений нет. Попробуйте номер знака или одно слово из названия."
+                : "Найдено знаков: " + signs.size();
+        Ui.add(page, Ui.text(this, summary, 13, Ui.MUTED, false),
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT, 0, 8, 0, 0);
         for (Content.Sign sign : signs) {
             Ui.add(page, signCard(sign), ViewGroup.LayoutParams.MATCH_PARENT,
