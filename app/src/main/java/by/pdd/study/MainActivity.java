@@ -26,6 +26,7 @@ import android.widget.ScrollView;
 import android.widget.TextView;
 import android.widget.Toast;
 
+import java.io.File;
 import java.util.ArrayList;
 import java.util.Calendar;
 import java.util.Collections;
@@ -39,6 +40,7 @@ import by.pdd.study.data.ProgressStore;
 import by.pdd.study.ui.IconView;
 import by.pdd.study.ui.ProgressRingView;
 import by.pdd.study.ui.Ui;
+import by.pdd.study.update.UpdateManager;
 
 /**
  * Single-activity, offline learning app. Native Android widgets keep the APK small and
@@ -52,12 +54,17 @@ public final class MainActivity extends Activity {
 
     private ContentRepository repository;
     private ProgressStore store;
+    private UpdateManager updateManager;
+    private File pendingInstall;
+    private AlertDialog downloadDialog;
+    private boolean updateCheckInProgress;
     private FrameLayout content;
     private LinearLayout bottomNavigation;
     private final List<LinearLayout> navigationItems = new ArrayList<>();
     private int activeTab = TAB_HOME;
     private String screen = "home";
     private int topicBackTarget = TAB_RULES;
+    private boolean ticketControlMode;
     private QuizSession quiz;
     private TextView timerText;
     private final Handler timerHandler = new Handler(Looper.getMainLooper());
@@ -85,6 +92,7 @@ public final class MainActivity extends Activity {
 
         repository = new ContentRepository(this);
         store = new ProgressStore(this);
+        updateManager = new UpdateManager(this);
 
         LinearLayout root = Ui.column(this);
         root.setBackgroundColor(Ui.BG);
@@ -94,6 +102,7 @@ public final class MainActivity extends Activity {
         buildBottomNavigation(root);
         setContentView(root);
         showHome();
+        checkForUpdates(false);
     }
 
     private void buildBottomNavigation(LinearLayout root) {
@@ -246,7 +255,7 @@ public final class MainActivity extends Activity {
         page.addView(hero);
 
         LinearLayout quick = Ui.row(this);
-        quick.addView(quickCard("Экзамен", "20 вопросов · 20 минут", "test", Ui.GREEN,
+        quick.addView(quickCard("Экзамен ×10", "10 вопросов · 10 минут", "test", Ui.GREEN,
                 view -> startExam()), new LinearLayout.LayoutParams(0,
                 ViewGroup.LayoutParams.MATCH_PARENT, 1));
         View changes = quickCard("Новое в 2025", "Разбор главных изменений", "alert", Ui.AMBER,
@@ -478,18 +487,21 @@ public final class MainActivity extends Activity {
     private void showTests() {
         quiz = null;
         LinearLayout page = Ui.column(this);
-        addMainHeader(page, "Тесты", "Закрепите правила и разберите ошибки", false);
+        addMainHeader(page, "Тесты", "Тренировка и контроль в стиле «Нового поворота»", false);
 
         LinearLayout exam = Ui.card(this);
         exam.setBackground(Ui.roundDp(this, Ui.GREEN, 24));
-        exam.addView(Ui.pill(this, "ТРЕНИРОВОЧНЫЙ ЭКЗАМЕН", Color.WHITE, Color.rgb(44, 105, 87)),
+        exam.addView(Ui.pill(this, "ЭКЗАМЕН ×10", Color.WHITE, Color.rgb(44, 105, 87)),
                 new LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT,
                         ViewGroup.LayoutParams.WRAP_CONTENT));
         Ui.add(exam, Ui.text(this, "Проверьте готовность", 25, Color.WHITE, true),
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT, 0, 16, 0, 0);
-        Ui.add(exam, Ui.text(this, "20 вопросов  ·  20 минут  ·  зачёт от 90%", 13,
+        Ui.add(exam, Ui.text(this, "10 вопросов  ·  10 минут  ·  не более 1 ошибки", 13,
                         Color.rgb(208, 231, 219), false),
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT, 0, 8, 0, 0);
+        Ui.add(exam, Ui.text(this, "Ответы вслепую · порядок вариантов меняется", 12,
+                        Color.rgb(208, 231, 219), false),
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT, 0, 5, 0, 0);
         Button start = Ui.button(this, "Начать экзамен", true);
         start.setBackground(Ui.ripple(this, Color.WHITE, 14));
         start.setTextColor(Ui.GREEN);
@@ -497,6 +509,16 @@ public final class MainActivity extends Activity {
         Ui.add(exam, start, ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT,
                 0, 18, 0, 0);
         page.addView(exam);
+
+        LinearLayout tickets = actionCard("Билеты · 40", "10 вопросов в каждом · тренировка или контроль",
+                "test", Ui.GREEN, Ui.MINT, view -> showTickets());
+        Ui.add(page, tickets, ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT,
+                0, 12, 0, 0);
+
+        LinearLayout control = actionCard("Контроль ×20", "20 минут · не более 2 ошибок · ответы вслепую",
+                "clock", Ui.AMBER, Ui.AMBER_BG, view -> startControl20());
+        Ui.add(page, control, ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT,
+                0, 10, 0, 0);
 
         int mistakes = store.wrongIds().size();
         LinearLayout mistakeCard = actionCard("Работа над ошибками",
@@ -509,7 +531,7 @@ public final class MainActivity extends Activity {
                     }
                 });
         Ui.add(page, mistakeCard, ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT,
-                0, 14, 0, 0);
+                0, 10, 0, 0);
 
         LinearLayout mixedCard = actionCard("Смешанная тренировка", "10 случайных вопросов с объяснениями",
                 "stats", Ui.GREEN, Ui.MINT, view -> {
@@ -531,6 +553,83 @@ public final class MainActivity extends Activity {
                     0, 0, 0, 10);
         }
         setScreen("tests", TAB_TESTS, true, scrollScreen(page, true));
+    }
+
+    private void showTickets() {
+        quiz = null;
+        LinearLayout page = Ui.column(this);
+        addBackHeader(page, "Билеты", this::showTests);
+        Ui.add(page, Ui.text(this, "40 билетов · по 10 вопросов", 25, Ui.INK, true),
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT, 0, 0, 0, 0);
+        Ui.add(page, Ui.text(this, "Состав билета фиксирован. Вопросы формируются из авторского банка приложения и могут повторяться в разных билетах.",
+                12, Ui.MUTED, false), ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT,
+                0, 7, 0, 16);
+
+        LinearLayout modes = Ui.row(this);
+        Button trainingMode = Ui.button(this, "Тренировка", !ticketControlMode);
+        Ui.clickable(trainingMode, view -> {
+            ticketControlMode = false;
+            showTickets();
+        });
+        Ui.addWeight(modes, trainingMode, 1, 0, 0, 6, 0);
+        Button controlMode = Ui.button(this, "Контроль ×10", ticketControlMode);
+        Ui.clickable(controlMode, view -> {
+            ticketControlMode = true;
+            showTickets();
+        });
+        Ui.addWeight(modes, controlMode, 1, 6, 0, 0, 0);
+        page.addView(modes);
+        TextView modeHint = Ui.text(this, ticketControlMode
+                        ? "10 минут · не более 1 ошибки · результат только в конце"
+                        : "Можно возвращаться к вопросам · пояснение после каждого ответа",
+                12, ticketControlMode ? Ui.AMBER : Ui.GREEN_2, true);
+        modeHint.setGravity(Gravity.CENTER);
+        Ui.add(page, modeHint, ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT,
+                0, 12, 0, 18);
+
+        for (int number = 1; number <= 40; number += 2) {
+            LinearLayout row = Ui.row(this);
+            row.addView(ticketCard(number), new LinearLayout.LayoutParams(0,
+                    ViewGroup.LayoutParams.MATCH_PARENT, 1));
+            View second = ticketCard(number + 1);
+            LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(0,
+                    ViewGroup.LayoutParams.MATCH_PARENT, 1);
+            params.setMargins(Ui.dp(this, 10), 0, 0, 0);
+            row.addView(second, params);
+            Ui.add(page, row, ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT,
+                    0, 0, 0, 10);
+        }
+        TextView disclaimer = Ui.text(this, "Это генерируемые учебные билеты, а не официальные билеты ГАИ и не копия базы «Нового поворота».",
+                11, Ui.MUTED, false);
+        disclaimer.setGravity(Gravity.CENTER);
+        Ui.add(page, disclaimer, ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT,
+                8, 10, 8, 0);
+        setScreen("tickets", TAB_TESTS, false, scrollScreen(page, true));
+    }
+
+    private View ticketCard(int number) {
+        LinearLayout card = Ui.card(this);
+        card.setGravity(Gravity.CENTER);
+        card.setPadding(Ui.dp(this, 12), Ui.dp(this, 16), Ui.dp(this, 12), Ui.dp(this, 16));
+        card.setBackground(Ui.ripple(this, Color.WHITE, 18));
+        TextView value = Ui.text(this, String.valueOf(number), 25, Ui.GREEN, true);
+        value.setGravity(Gravity.CENTER);
+        card.addView(value);
+        TextView label = Ui.text(this, "БИЛЕТ · 10", 10, Ui.MUTED, true);
+        label.setGravity(Gravity.CENTER);
+        Ui.add(card, label, ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT,
+                0, 4, 0, 0);
+        Ui.clickable(card, view -> startTicket(number));
+        return card;
+    }
+
+    private void startTicket(int number) {
+        List<Content.Question> questions = repository.createTicket(number);
+        if (ticketControlMode) {
+            startControl("Билет " + number + " · контроль", questions, 10, 1, TAB_TESTS, number);
+        } else {
+            startQuiz("Билет " + number + " · тренировка", questions, false, TAB_TESTS);
+        }
     }
 
     private LinearLayout actionCard(String title, String subtitle, String icon, int color, int iconBackground,
@@ -555,7 +654,21 @@ public final class MainActivity extends Activity {
     }
 
     private void startExam() {
-        startQuiz("Тренировочный экзамен", repository.createExam(System.currentTimeMillis()), true, TAB_TESTS);
+        startControl("Экзамен ×10", repository.createExam(System.currentTimeMillis(), 10),
+                10, 1, TAB_TESTS, 0);
+    }
+
+    private void startControl20() {
+        startControl("Контроль ×20", repository.createExam(System.currentTimeMillis(), 20),
+                20, 2, TAB_TESTS, 0);
+    }
+
+    private void startControl(String title, List<Content.Question> questions, int minutes,
+                              int maxErrors, int backTarget, int ticketNumber) {
+        if (questions == null || questions.isEmpty()) return;
+        quiz = new QuizSession(title, new ArrayList<>(questions), true, backTarget,
+                minutes, maxErrors, true, ticketNumber);
+        renderQuiz();
     }
 
     private void startQuiz(String title, List<Content.Question> questions, boolean exam, int backTarget) {
@@ -563,13 +676,18 @@ public final class MainActivity extends Activity {
             Toast.makeText(this, "В этом разделе пока нет вопросов", Toast.LENGTH_SHORT).show();
             return;
         }
-        quiz = new QuizSession(title, new ArrayList<>(questions), exam, backTarget);
+        quiz = new QuizSession(title, new ArrayList<>(questions), exam, backTarget,
+                exam ? 20 : 0, exam ? 2 : -1, exam, 0);
         renderQuiz();
     }
 
     private void renderQuiz() {
         if (quiz == null || quiz.finished) return;
         timerHandler.removeCallbacks(timerTick);
+        Integer savedSelection = quiz.selections[quiz.index];
+        quiz.answered = savedSelection != null;
+        quiz.selected = savedSelection == null ? -1 : savedSelection;
+
         LinearLayout page = Ui.column(this);
         addBackHeader(page, quiz.title, this::confirmLeaveQuiz);
 
@@ -577,7 +695,8 @@ public final class MainActivity extends Activity {
         TextView count = Ui.text(this, (quiz.index + 1) + " / " + quiz.questions.size(), 13, Ui.MUTED, true);
         Ui.addWeight(status, count, 1, 0, 0, 0, 0);
         if (quiz.exam) {
-            timerText = Ui.text(this, formatTime(quiz.remainingSeconds), 14, quiz.remainingSeconds < 60 ? Ui.RED : Ui.GREEN, true);
+            timerText = Ui.text(this, formatTime(quiz.remainingSeconds), 14,
+                    quiz.remainingSeconds < 60 ? Ui.RED : Ui.GREEN, true);
             status.addView(Ui.icon(this, "clock", Ui.GREEN, 18));
             Ui.add(status, timerText, ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT,
                     6, 0, 0, 0);
@@ -586,8 +705,9 @@ public final class MainActivity extends Activity {
         }
         page.addView(status);
         ProgressBar progress = Ui.progress(this, Ui.GREEN_2);
-        progress.setProgress(Math.round((quiz.index + (quiz.answered ? 1 : 0)) * 100f / quiz.questions.size()));
-        Ui.add(page, progress, ViewGroup.LayoutParams.MATCH_PARENT, Ui.dp(this, 6), 0, 12, 0, 20);
+        progress.setProgress(Math.round(answeredCount() * 100f / quiz.questions.size()));
+        Ui.add(page, progress, ViewGroup.LayoutParams.MATCH_PARENT, Ui.dp(this, 6), 0, 12, 0, 14);
+        addQuestionStrip(page);
 
         Content.Question current = quiz.questions.get(quiz.index);
         Content.Topic topic = repository.topic(current.topicId);
@@ -598,11 +718,12 @@ public final class MainActivity extends Activity {
         Ui.add(page, Ui.text(this, current.question, 23, Ui.INK, true),
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT, 0, 18, 0, 22);
 
-        for (int i = 0; i < current.answers.size(); i++) {
-            final int answer = i;
-            boolean selected = quiz.answered && quiz.selected == i;
-            boolean correctAnswer = quiz.answered && !quiz.exam && i == current.correct;
-            boolean wrongSelected = selected && !quiz.exam && i != current.correct;
+        List<Integer> answerOrder = quiz.answerOrders.get(quiz.index);
+        for (int position = 0; position < answerOrder.size(); position++) {
+            final int answer = answerOrder.get(position);
+            boolean selected = quiz.answered && quiz.selected == answer;
+            boolean correctAnswer = quiz.answered && !quiz.exam && answer == current.correct;
+            boolean wrongSelected = selected && !quiz.exam && answer != current.correct;
             int background = Color.WHITE;
             int foreground = Ui.INK;
             if (quiz.exam && selected) {
@@ -619,11 +740,11 @@ public final class MainActivity extends Activity {
             answerCard.setPadding(Ui.dp(this, 15), Ui.dp(this, 15), Ui.dp(this, 15), Ui.dp(this, 15));
             answerCard.setBackground(Ui.ripple(this, background, 17));
             LinearLayout row = Ui.row(this);
-            TextView letter = Ui.text(this, String.valueOf((char) ('А' + i)), 13, foreground, true);
+            TextView letter = Ui.text(this, String.valueOf((char) ('А' + position)), 13, foreground, true);
             letter.setGravity(Gravity.CENTER);
             letter.setBackground(Ui.roundDp(this, background == Color.WHITE ? Ui.BG : Color.WHITE, 11));
             row.addView(letter, new LinearLayout.LayoutParams(Ui.dp(this, 38), Ui.dp(this, 38)));
-            TextView answerText = Ui.text(this, current.answers.get(i), 15, foreground, false);
+            TextView answerText = Ui.text(this, current.answers.get(answer), 15, foreground, false);
             Ui.addWeight(row, answerText, 1, 12, 0, 4, 0);
             if (correctAnswer) row.addView(Ui.icon(this, "check", Ui.GREEN, 22));
             if (wrongSelected) row.addView(Ui.icon(this, "close", Ui.RED, 22));
@@ -635,6 +756,14 @@ public final class MainActivity extends Activity {
             }
             Ui.add(page, answerCard, ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT,
                     0, 0, 0, 10);
+        }
+
+        if (quiz.answered && quiz.exam) {
+            TextView accepted = Ui.text(this, "ОТВЕТ ПРИНЯТ", 13, Ui.GREEN, true);
+            accepted.setGravity(Gravity.CENTER);
+            accepted.setLetterSpacing(0.1f);
+            Ui.add(page, accepted, ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT,
+                    0, 5, 0, 12);
         }
 
         if (quiz.answered && !quiz.exam) {
@@ -651,42 +780,110 @@ public final class MainActivity extends Activity {
                     0, 6, 0, 14);
         }
 
+        LinearLayout navigation = Ui.row(this);
+        if (quiz.index > 0) {
+            Button previous = Ui.button(this, "Назад", false);
+            Ui.clickable(previous, view -> jumpToQuestion(quiz.index - 1));
+            Ui.addWeight(navigation, previous, 0.45f, 0, 0, 8, 0);
+        }
         if (quiz.answered) {
-            Button next = Ui.button(this, quiz.index == quiz.questions.size() - 1 ? "Показать результат" : "Следующий вопрос", true);
+            Button next = Ui.button(this, quiz.index == quiz.questions.size() - 1 ? "Завершить" : "Далее", true);
             Ui.clickable(next, view -> nextQuestion());
-            Ui.add(page, next, ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT,
-                    0, 8, 0, 0);
+            Ui.addWeight(navigation, next, 1, 0, 0, 0, 0);
         } else {
             TextView hint = Ui.text(this, "Выберите один вариант ответа", 12, Ui.MUTED, false);
             hint.setGravity(Gravity.CENTER);
-            Ui.add(page, hint, ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT,
-                    0, 8, 0, 0);
+            Ui.addWeight(navigation, hint, 1, 0, 0, 0, 0);
         }
+        Ui.add(page, navigation, ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT,
+                0, 8, 0, 0);
         setScreen("quiz", quiz.backTarget, false, scrollScreen(page, true));
         if (quiz.exam) timerHandler.postDelayed(timerTick, 1000);
+    }
+
+    private void addQuestionStrip(LinearLayout page) {
+        android.widget.HorizontalScrollView scroll = new android.widget.HorizontalScrollView(this);
+        scroll.setHorizontalScrollBarEnabled(false);
+        LinearLayout strip = Ui.row(this);
+        strip.setPadding(0, 0, 0, Ui.dp(this, 4));
+        for (int i = 0; i < quiz.questions.size(); i++) {
+            final int questionIndex = i;
+            Integer selection = quiz.selections[i];
+            boolean current = i == quiz.index;
+            int background = Color.WHITE;
+            int foreground = Ui.MUTED;
+            if (selection != null) {
+                if (quiz.exam) {
+                    background = Color.rgb(220, 230, 224);
+                    foreground = Ui.GREEN;
+                } else {
+                    boolean correct = selection == quiz.questions.get(i).correct;
+                    background = correct ? Ui.GREEN_2 : Ui.RED;
+                    foreground = Color.WHITE;
+                }
+            }
+            if (current) {
+                background = Ui.GREEN;
+                foreground = Color.WHITE;
+            }
+            TextView number = Ui.text(this, String.valueOf(i + 1), 13, foreground, true);
+            number.setGravity(Gravity.CENTER);
+            number.setBackground(Ui.ripple(this, background, 11));
+            number.setContentDescription("Вопрос " + (i + 1));
+            Ui.clickable(number, view -> jumpToQuestion(questionIndex));
+            LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(Ui.dp(this, 40), Ui.dp(this, 40));
+            params.setMargins(0, 0, Ui.dp(this, 6), 0);
+            strip.addView(number, params);
+        }
+        scroll.addView(strip);
+        Ui.add(page, scroll, ViewGroup.LayoutParams.MATCH_PARENT, Ui.dp(this, 48), 0, 0, 0, 16);
+    }
+
+    private int answeredCount() {
+        int result = 0;
+        for (Integer selection : quiz.selections) if (selection != null) result++;
+        return result;
+    }
+
+    private void jumpToQuestion(int index) {
+        if (quiz == null || index < 0 || index >= quiz.questions.size()) return;
+        quiz.index = index;
+        renderQuiz();
     }
 
     private void answerCurrent(int answer) {
         if (quiz == null || quiz.answered) return;
         Content.Question current = quiz.questions.get(quiz.index);
+        quiz.selections[quiz.index] = answer;
         quiz.selected = answer;
         quiz.answered = true;
         boolean correct = answer == current.correct;
         if (correct) quiz.score++; else quiz.incorrect.add(current);
         store.recordAnswer(current, correct);
-        renderQuiz();
+        if (quiz.exam && quiz.incorrect.size() > quiz.maxErrors) {
+            showResult();
+        } else {
+            renderQuiz();
+        }
     }
 
     private void nextQuestion() {
         if (quiz == null) return;
         if (quiz.index >= quiz.questions.size() - 1) {
-            showResult();
+            if (answeredCount() < quiz.questions.size()) {
+                new AlertDialog.Builder(this)
+                        .setTitle("Завершить тест?")
+                        .setMessage("Без ответа: " + (quiz.questions.size() - answeredCount())
+                                + ". Они будут засчитаны как ошибки.")
+                        .setNegativeButton("Вернуться", null)
+                        .setPositiveButton("Завершить", (dialog, which) -> showResult())
+                        .show();
+            } else {
+                showResult();
+            }
             return;
         }
-        quiz.index++;
-        quiz.selected = -1;
-        quiz.answered = false;
-        renderQuiz();
+        jumpToQuestion(quiz.index + 1);
     }
 
     private void showResult() {
@@ -695,7 +892,8 @@ public final class MainActivity extends Activity {
         timerHandler.removeCallbacks(timerTick);
         if (quiz.exam) store.recordExam(quiz.score, quiz.questions.size());
         int percent = Math.round(quiz.score * 100f / quiz.questions.size());
-        boolean passed = percent >= 90;
+        int errors = quiz.questions.size() - quiz.score;
+        boolean passed = quiz.exam ? errors <= quiz.maxErrors : percent >= 90;
         LinearLayout page = Ui.column(this);
         page.setGravity(Gravity.CENTER_HORIZONTAL);
         addBackHeader(page, "Результат", this::showTests);
@@ -711,12 +909,14 @@ public final class MainActivity extends Activity {
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
         page.addView(ringFrame, new LinearLayout.LayoutParams(Ui.dp(this, 156), Ui.dp(this, 156)));
 
-        TextView title = Ui.text(this, passed ? "Отличный результат!" : "Ещё немного практики", 27, Ui.INK, true);
+        TextView title = Ui.text(this, passed ? (quiz.exam ? "Зачёт получен!" : "Отличный результат!") : "Ещё немного практики",
+                27, Ui.INK, true);
         title.setGravity(Gravity.CENTER);
         Ui.add(page, title, ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT,
                 0, 24, 0, 0);
+        String requirement = quiz.exam ? " · допустимо ошибок: " + quiz.maxErrors : "";
         TextView subtitle = Ui.text(this, quiz.score + " из " + quiz.questions.size()
-                + " правильных ответов" + (quiz.exam ? " · зачёт от 90%" : ""), 14, Ui.MUTED, false);
+                + " правильных ответов" + requirement, 14, Ui.MUTED, false);
         subtitle.setGravity(Gravity.CENTER);
         Ui.add(page, subtitle, ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT,
                 0, 8, 0, 0);
@@ -724,7 +924,7 @@ public final class MainActivity extends Activity {
         LinearLayout summary = Ui.card(this);
         LinearLayout summaryRow = Ui.row(this);
         addResultStat(summaryRow, "Верно", String.valueOf(quiz.score), Ui.GREEN);
-        addResultStat(summaryRow, "Ошибки", String.valueOf(quiz.questions.size() - quiz.score), Ui.RED);
+        addResultStat(summaryRow, "Ошибки", String.valueOf(errors), Ui.RED);
         addResultStat(summaryRow, "Вопросов", String.valueOf(quiz.questions.size()), Ui.INK);
         summary.addView(summaryRow);
         Ui.add(page, summary, ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT,
@@ -737,10 +937,8 @@ public final class MainActivity extends Activity {
             Ui.add(page, mistakes, ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT,
                     0, 18, 0, 0);
         }
-        Button retry = Ui.button(this, quiz.exam ? "Новый экзамен" : "Пройти ещё раз", true);
-        Ui.clickable(retry, view -> {
-            if (quiz.exam) startExam(); else startQuiz(quiz.title, quiz.questions, false, quiz.backTarget);
-        });
+        Button retry = Ui.button(this, quiz.exam ? "Новая попытка" : "Пройти ещё раз", true);
+        Ui.clickable(retry, view -> restartQuiz());
         Ui.add(page, retry, ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT,
                 0, quiz.incorrect.isEmpty() ? 18 : 10, 0, 0);
         Button done = Ui.button(this, "К тестам", false);
@@ -748,6 +946,23 @@ public final class MainActivity extends Activity {
         Ui.add(page, done, ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT,
                 0, 10, 0, 0);
         setScreen("result", TAB_TESTS, false, scrollScreen(page, true));
+    }
+
+    private void restartQuiz() {
+        if (quiz == null) return;
+        if (!quiz.exam) {
+            startQuiz(quiz.title, quiz.questions, false, quiz.backTarget);
+        } else if (quiz.ticketNumber > 0) {
+            startControl(quiz.title, quiz.questions, quiz.timeLimitMinutes, quiz.maxErrors,
+                    quiz.backTarget, quiz.ticketNumber);
+        } else if ("Экзамен ×10".equals(quiz.title)) {
+            startExam();
+        } else if ("Контроль ×20".equals(quiz.title)) {
+            startControl20();
+        } else {
+            startControl(quiz.title, quiz.questions, quiz.timeLimitMinutes, quiz.maxErrors,
+                    quiz.backTarget, 0);
+        }
     }
 
     private void addResultStat(LinearLayout row, String label, String value, int color) {
@@ -852,6 +1067,99 @@ public final class MainActivity extends Activity {
         }
     }
 
+    private void checkForUpdates(boolean manual) {
+        if (BuildConfig.DEBUG) {
+            if (manual) Toast.makeText(this, "Проверка доступна в release-сборке", Toast.LENGTH_SHORT).show();
+            return;
+        }
+        if (updateCheckInProgress) return;
+        updateCheckInProgress = true;
+        if (manual) Toast.makeText(this, "Проверяем новую версию…", Toast.LENGTH_SHORT).show();
+        updateManager.check(new UpdateManager.CheckListener() {
+            @Override public void onUpdate(UpdateManager.UpdateInfo update) {
+                updateCheckInProgress = false;
+                showUpdateDialog(update);
+            }
+
+            @Override public void onNoUpdate() {
+                updateCheckInProgress = false;
+                if (manual) Toast.makeText(MainActivity.this,
+                        "У вас последняя версия · " + BuildConfig.VERSION_NAME, Toast.LENGTH_SHORT).show();
+            }
+
+            @Override public void onError(String message) {
+                updateCheckInProgress = false;
+                if (manual) Toast.makeText(MainActivity.this, message, Toast.LENGTH_LONG).show();
+            }
+        });
+    }
+
+    private void showUpdateDialog(UpdateManager.UpdateInfo update) {
+        new AlertDialog.Builder(this)
+                .setTitle("Доступна версия " + update.versionName)
+                .setMessage("У вас: " + BuildConfig.VERSION_NAME + "\n\n" + update.notes
+                        + "\n\nAPK будет загружен и проверен внутри приложения. Браузер не понадобится.")
+                .setNegativeButton("Позже", null)
+                .setPositiveButton("Обновить", (dialog, which) -> downloadUpdate(update))
+                .show();
+    }
+
+    private void downloadUpdate(UpdateManager.UpdateInfo update) {
+        LinearLayout layout = Ui.column(this);
+        layout.setPadding(Ui.dp(this, 24), Ui.dp(this, 12), Ui.dp(this, 24), Ui.dp(this, 4));
+        TextView status = Ui.text(this, "Подготовка загрузки…", 14, Ui.INK, false);
+        layout.addView(status);
+        ProgressBar progress = Ui.progress(this, Ui.GREEN_2);
+        progress.setMax(100);
+        Ui.add(layout, progress, ViewGroup.LayoutParams.MATCH_PARENT, Ui.dp(this, 8), 0, 18, 0, 12);
+        TextView security = Ui.text(this, "После загрузки проверим SHA-256 и сертификат подписи", 11, Ui.MUTED, false);
+        layout.addView(security);
+        downloadDialog = new AlertDialog.Builder(this)
+                .setTitle("Обновление " + update.versionName)
+                .setView(layout)
+                .setCancelable(false)
+                .create();
+        downloadDialog.show();
+        updateManager.download(update, new UpdateManager.DownloadListener() {
+            @Override public void onProgress(int percent) {
+                progress.setProgress(percent);
+                status.setText(percent < 100 ? "Загружено: " + percent + "%" : "APK проверен. Запускаем установку…");
+            }
+
+            @Override public void onVerified(File apk) {
+                if (downloadDialog != null) downloadDialog.dismiss();
+                pendingInstall = apk;
+                requestVerifiedInstall();
+            }
+
+            @Override public void onError(String message) {
+                if (downloadDialog != null) downloadDialog.dismiss();
+                new AlertDialog.Builder(MainActivity.this)
+                        .setTitle("Не удалось обновиться")
+                        .setMessage(message)
+                        .setPositiveButton("Понятно", null)
+                        .show();
+            }
+        });
+    }
+
+    private void requestVerifiedInstall() {
+        if (pendingInstall == null) return;
+        if (updateManager.canInstall()) {
+            File apk = pendingInstall;
+            pendingInstall = null;
+            updateManager.install(apk);
+            return;
+        }
+        new AlertDialog.Builder(this)
+                .setTitle("Разрешите установку обновлений")
+                .setMessage("Android требует одно системное разрешение «Установка из неизвестных источников». "
+                        + "Откроются настройки системы, не браузер. После разрешения вернитесь в приложение.")
+                .setNegativeButton("Отмена", (dialog, which) -> pendingInstall = null)
+                .setPositiveButton("Открыть настройки", (dialog, which) -> updateManager.openInstallSettings())
+                .show();
+    }
+
     private void showProfile() {
         quiz = null;
         LinearLayout page = Ui.column(this);
@@ -919,9 +1227,15 @@ public final class MainActivity extends Activity {
                 0, 8, 0, 0);
         page.addView(legal);
 
+        LinearLayout updater = actionCard("Обновление приложения", "Версия " + BuildConfig.VERSION_NAME
+                        + " · проверить и установить без браузера",
+                "refresh", Ui.GREEN, Ui.MINT, view -> checkForUpdates(true));
+        Ui.add(page, updater, ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT,
+                0, 14, 0, 0);
+
         LinearLayout privacy = actionCard("Приватность и офлайн", "Без аккаунта, рекламы и аналитики",
                 "info", Ui.GREEN, Ui.MINT, view -> Toast.makeText(this,
-                        "Приложение не запрашивает разрешение на интернет и не передаёт данные", Toast.LENGTH_LONG).show());
+                        "Прогресс хранится на устройстве. Интернет используется только для проверки и загрузки обновлений.", Toast.LENGTH_LONG).show());
         Ui.add(page, privacy, ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT,
                 0, 14, 0, 0);
 
@@ -970,6 +1284,8 @@ public final class MainActivity extends Activity {
             confirmLeaveQuiz();
         } else if ("topic".equals(screen)) {
             goBackFromTopic();
+        } else if ("tickets".equals(screen)) {
+            showTests();
         } else if ("search".equals(screen)) {
             showRules();
         } else if ("result".equals(screen)) {
@@ -982,8 +1298,19 @@ public final class MainActivity extends Activity {
     }
 
     @Override
+    protected void onResume() {
+        super.onResume();
+        if (pendingInstall != null && updateManager != null && updateManager.canInstall()) {
+            File apk = pendingInstall;
+            pendingInstall = null;
+            updateManager.install(apk);
+        }
+    }
+
+    @Override
     protected void onDestroy() {
         timerHandler.removeCallbacks(timerTick);
+        if (updateManager != null) updateManager.close();
         super.onDestroy();
     }
 
@@ -992,19 +1319,41 @@ public final class MainActivity extends Activity {
         final List<Content.Question> questions;
         final boolean exam;
         final int backTarget;
+        final int timeLimitMinutes;
+        final int maxErrors;
+        final boolean floatingAnswers;
+        final int ticketNumber;
         final List<Content.Question> incorrect = new ArrayList<>();
+        final Integer[] selections;
+        final List<List<Integer>> answerOrders = new ArrayList<>();
         int index;
         int score;
         int selected = -1;
         boolean answered;
         boolean finished;
-        int remainingSeconds = 20 * 60;
+        int remainingSeconds;
 
-        QuizSession(String title, List<Content.Question> questions, boolean exam, int backTarget) {
+        QuizSession(String title, List<Content.Question> questions, boolean exam, int backTarget,
+                    int timeLimitMinutes, int maxErrors, boolean floatingAnswers, int ticketNumber) {
             this.title = title;
             this.questions = questions;
             this.exam = exam;
             this.backTarget = backTarget;
+            this.timeLimitMinutes = timeLimitMinutes;
+            this.maxErrors = maxErrors;
+            this.floatingAnswers = floatingAnswers;
+            this.ticketNumber = ticketNumber;
+            this.remainingSeconds = timeLimitMinutes * 60;
+            this.selections = new Integer[questions.size()];
+            long answerSeed = System.currentTimeMillis();
+            for (Content.Question question : questions) {
+                List<Integer> order = new ArrayList<>();
+                for (int i = 0; i < question.answers.size(); i++) order.add(i);
+                if (floatingAnswers) {
+                    Collections.shuffle(order, new java.util.Random(question.id.hashCode() * 31L + answerSeed));
+                }
+                answerOrders.add(order);
+            }
         }
     }
 }

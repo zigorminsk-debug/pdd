@@ -8,6 +8,9 @@ if (signingFile.exists()) {
     signingFile.withInputStream { signing.load(it) }
 }
 
+Properties version = new Properties()
+rootProject.file('version.properties').withInputStream { version.load(it) }
+
 android {
     namespace 'by.pdd.study'
     compileSdk 35
@@ -16,8 +19,8 @@ android {
         applicationId 'by.pdd.study'
         minSdk 26
         targetSdk 35
-        versionCode 1
-        versionName '1.0.0'
+        versionCode version.getProperty('versionCode').toInteger()
+        versionName version.getProperty('versionName')
     }
 
     signingConfigs {

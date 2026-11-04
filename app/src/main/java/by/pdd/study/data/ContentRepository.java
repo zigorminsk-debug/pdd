@@ -147,22 +147,29 @@ public final class ContentRepository {
         return result;
     }
 
-    /** Builds a reproducible varied 20-question practice exam with broad topic coverage. */
+    /** Builds a varied 20-question practice exam with broad topic coverage. */
     public List<Content.Question> createExam(long seed) {
+        return createExam(seed, 20);
+    }
+
+    /** Builds a reproducible generated ticket. These are not official GAI tickets. */
+    public List<Content.Question> createExam(long seed, int count) {
+        int target = Math.min(count, questions.size());
         List<Content.Question> pool = new ArrayList<>(questions);
         Collections.shuffle(pool, new Random(seed));
         List<Content.Question> result = new ArrayList<>();
         Set<String> covered = new HashSet<>();
+        int coverageTarget = Math.min(target, topics.size());
         for (Content.Question question : pool) {
             if (covered.add(question.topicId)) {
                 result.add(question);
             }
-            if (result.size() == topics.size()) {
+            if (result.size() == coverageTarget) {
                 break;
             }
         }
         for (Content.Question question : pool) {
-            if (result.size() >= 20) {
+            if (result.size() >= target) {
                 break;
             }
             if (!result.contains(question)) {
@@ -171,6 +178,11 @@ public final class ContentRepository {
         }
         Collections.shuffle(result, new Random(seed + 1));
         return result;
+    }
+
+    public List<Content.Question> createTicket(int number) {
+        if (number < 1 || number > 40) throw new IllegalArgumentException("Ticket must be 1..40");
+        return createExam(20250901L + number * 7919L, 10);
     }
 
     public List<Content.Topic> searchTopics(String query) {
