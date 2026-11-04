@@ -820,8 +820,12 @@ public final class MainActivity extends Activity {
     }
 
     private void addQuestionStrip(LinearLayout page) {
-        android.widget.HorizontalScrollView scroll = new android.widget.HorizontalScrollView(this);
-        scroll.setHorizontalScrollBarEnabled(false);
+        boolean fitAll = quiz.questions.size() <= 10;
+        android.widget.HorizontalScrollView scroll = null;
+        if (!fitAll) {
+            scroll = new android.widget.HorizontalScrollView(this);
+            scroll.setHorizontalScrollBarEnabled(false);
+        }
         LinearLayout strip = Ui.row(this);
         strip.setPadding(0, 0, 0, Ui.dp(this, 4));
         for (int i = 0; i < quiz.questions.size(); i++) {
@@ -849,12 +853,19 @@ public final class MainActivity extends Activity {
             number.setBackground(Ui.ripple(this, background, 11));
             number.setContentDescription("Вопрос " + (i + 1));
             Ui.clickable(number, view -> jumpToQuestion(questionIndex));
-            LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(Ui.dp(this, 40), Ui.dp(this, 40));
-            params.setMargins(0, 0, Ui.dp(this, 6), 0);
+            LinearLayout.LayoutParams params = fitAll
+                    ? new LinearLayout.LayoutParams(0, Ui.dp(this, 40), 1)
+                    : new LinearLayout.LayoutParams(Ui.dp(this, 40), Ui.dp(this, 40));
+            int margin = fitAll ? 3 : 6;
+            params.setMargins(0, 0, i == quiz.questions.size() - 1 ? 0 : Ui.dp(this, margin), 0);
             strip.addView(number, params);
         }
-        scroll.addView(strip);
-        Ui.add(page, scroll, ViewGroup.LayoutParams.MATCH_PARENT, Ui.dp(this, 48), 0, 0, 0, 16);
+        if (fitAll) {
+            Ui.add(page, strip, ViewGroup.LayoutParams.MATCH_PARENT, Ui.dp(this, 48), 0, 0, 0, 16);
+        } else {
+            scroll.addView(strip);
+            Ui.add(page, scroll, ViewGroup.LayoutParams.MATCH_PARENT, Ui.dp(this, 48), 0, 0, 0, 16);
+        }
     }
 
     private int answeredCount() {
