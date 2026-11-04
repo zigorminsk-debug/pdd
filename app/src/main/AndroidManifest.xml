@@ -21,6 +21,10 @@
             </intent-filter>
         </activity>
 
+        <receiver
+            android:name=".update.UpdateInstallReceiver"
+            android:exported="false" />
+
         <provider
             android:name=".update.UpdateApkProvider"
             android:authorities="${applicationId}.update"

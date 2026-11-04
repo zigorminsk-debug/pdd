@@ -69,6 +69,7 @@ public final class MainActivity extends Activity {
     private boolean ticketControlMode;
     private QuizSession quiz;
     private TextView timerText;
+    private ScrollView quizScrollView;
     private final Handler timerHandler = new Handler(Looper.getMainLooper());
     private final Runnable timerTick = new Runnable() {
         @Override public void run() {
@@ -684,6 +685,7 @@ public final class MainActivity extends Activity {
     private void startControl(String title, List<Content.Question> questions, int minutes,
                               int maxErrors, int backTarget, int ticketNumber) {
         if (questions == null || questions.isEmpty()) return;
+        quizScrollView = null;
         quiz = new QuizSession(title, new ArrayList<>(questions), true, backTarget,
                 minutes, maxErrors, true, ticketNumber);
         renderQuiz();
@@ -694,6 +696,7 @@ public final class MainActivity extends Activity {
             Toast.makeText(this, "В этом разделе пока нет вопросов", Toast.LENGTH_SHORT).show();
             return;
         }
+        quizScrollView = null;
         quiz = new QuizSession(title, new ArrayList<>(questions), exam, backTarget,
                 exam ? 20 : 0, exam ? 2 : -1, exam, 0);
         renderQuiz();
@@ -702,39 +705,63 @@ public final class MainActivity extends Activity {
     private void renderQuiz() {
         if (quiz == null || quiz.finished) return;
         timerHandler.removeCallbacks(timerTick);
+        int previousScrollY = quizScrollView == null ? 0 : quizScrollView.getScrollY();
         Integer savedSelection = quiz.selections[quiz.index];
         quiz.answered = savedSelection != null;
         quiz.selected = savedSelection == null ? -1 : savedSelection;
 
-        LinearLayout page = Ui.column(this);
-        addBackHeader(page, quiz.title, this::confirmLeaveQuiz);
+        LinearLayout screen = Ui.column(this);
+        screen.setBackgroundColor(Ui.BG);
+
+        LinearLayout header = Ui.column(this);
+        header.setPadding(Ui.dp(this, 14), Ui.dp(this, 8), Ui.dp(this, 14), 0);
+        LinearLayout top = Ui.row(this);
+        LinearLayout back = iconButton("back", Ui.INK, Color.WHITE);
+        back.setContentDescription("Прервать тест");
+        Ui.clickable(back, view -> confirmLeaveQuiz());
+        top.addView(back, new LinearLayout.LayoutParams(Ui.dp(this, 36), Ui.dp(this, 36)));
+        TextView titleView = Ui.text(this, quiz.title, 19, Ui.INK, true);
+        Ui.singleLine(titleView);
+        Ui.addWeight(top, titleView, 1, 12, 0, 8, 0);
+        if (quiz.exam) {
+            top.addView(Ui.icon(this, "clock", Ui.GREEN, 18));
+            timerText = Ui.text(this, formatTime(quiz.remainingSeconds), 16,
+                    quiz.remainingSeconds < 60 ? Ui.RED : Ui.GREEN, true);
+            Ui.add(top, timerText, ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT,
+                    5, 0, 0, 0);
+        } else {
+            top.addView(Ui.text(this, (quiz.index + 1) + "/" + quiz.questions.size(), 14, Ui.MUTED, true));
+        }
+        header.addView(top);
 
         LinearLayout status = Ui.row(this);
-        TextView count = Ui.text(this, (quiz.index + 1) + " / " + quiz.questions.size(), 13, Ui.MUTED, true);
-        Ui.addWeight(status, count, 1, 0, 0, 0, 0);
         if (quiz.exam) {
-            timerText = Ui.text(this, formatTime(quiz.remainingSeconds), 14,
-                    quiz.remainingSeconds < 60 ? Ui.RED : Ui.GREEN, true);
-            status.addView(Ui.icon(this, "clock", Ui.GREEN, 18));
-            Ui.add(status, timerText, ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT,
-                    6, 0, 0, 0);
+            Ui.addWeight(status, Ui.text(this, "Вопрос " + (quiz.index + 1) + " из " + quiz.questions.size(),
+                    12, Ui.MUTED, true), 1, 0, 0, 0, 0);
+            status.addView(Ui.pill(this, "ВСЛЕПУЮ", Ui.AMBER, Ui.AMBER_BG));
         } else {
+            Ui.addWeight(status, Ui.text(this, "Тренировка", 12, Ui.MUTED, true), 1,
+                    0, 0, 0, 0);
             status.addView(Ui.pill(this, "С ОБЪЯСНЕНИЯМИ", Ui.GREEN, Ui.MINT));
         }
-        page.addView(status);
+        Ui.add(header, status, ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT,
+                0, 8, 0, 0);
         ProgressBar progress = Ui.progress(this, Ui.GREEN_2);
         progress.setProgress(Math.round(answeredCount() * 100f / quiz.questions.size()));
-        Ui.add(page, progress, ViewGroup.LayoutParams.MATCH_PARENT, Ui.dp(this, 6), 0, 12, 0, 14);
-        addQuestionStrip(page);
+        Ui.add(header, progress, ViewGroup.LayoutParams.MATCH_PARENT, Ui.dp(this, 4), 0, 8, 0, 8);
+        addQuestionStrip(header);
+        screen.addView(header);
 
+        LinearLayout page = Ui.column(this);
+        page.setPadding(Ui.dp(this, 20), Ui.dp(this, 4), Ui.dp(this, 20), Ui.dp(this, 28));
         Content.Question current = quiz.questions.get(quiz.index);
         Content.Topic topic = repository.topic(current.topicId);
         page.addView(Ui.pill(this, topic == null ? "ПДД" : topic.shortTitle.toUpperCase(),
                 topic != null && topic.updated ? Ui.AMBER : Ui.GREEN,
                 topic != null && topic.updated ? Ui.AMBER_BG : Ui.MINT), new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT));
-        Ui.add(page, Ui.text(this, current.question, 23, Ui.INK, true),
-                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT, 0, 18, 0, 22);
+        Ui.add(page, Ui.text(this, current.question, 20, Ui.INK, true),
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT, 0, 12, 0, 16);
 
         List<Integer> answerOrder = quiz.answerOrders.get(quiz.index);
         for (int position = 0; position < answerOrder.size(); position++) {
@@ -755,17 +782,17 @@ public final class MainActivity extends Activity {
                 foreground = Ui.RED;
             }
             LinearLayout answerCard = Ui.card(this);
-            answerCard.setPadding(Ui.dp(this, 15), Ui.dp(this, 15), Ui.dp(this, 15), Ui.dp(this, 15));
-            answerCard.setBackground(Ui.ripple(this, background, 17));
+            answerCard.setPadding(Ui.dp(this, 12), Ui.dp(this, 12), Ui.dp(this, 12), Ui.dp(this, 12));
+            answerCard.setBackground(Ui.ripple(this, background, 16));
             LinearLayout row = Ui.row(this);
             TextView letter = Ui.text(this, String.valueOf((char) ('А' + position)), 13, foreground, true);
             letter.setGravity(Gravity.CENTER);
-            letter.setBackground(Ui.roundDp(this, background == Color.WHITE ? Ui.BG : Color.WHITE, 11));
-            row.addView(letter, new LinearLayout.LayoutParams(Ui.dp(this, 38), Ui.dp(this, 38)));
-            TextView answerText = Ui.text(this, current.answers.get(answer), 15, foreground, false);
-            Ui.addWeight(row, answerText, 1, 12, 0, 4, 0);
-            if (correctAnswer) row.addView(Ui.icon(this, "check", Ui.GREEN, 22));
-            if (wrongSelected) row.addView(Ui.icon(this, "close", Ui.RED, 22));
+            letter.setBackground(Ui.roundDp(this, background == Color.WHITE ? Ui.BG : Color.WHITE, 10));
+            row.addView(letter, new LinearLayout.LayoutParams(Ui.dp(this, 34), Ui.dp(this, 34)));
+            TextView answerText = Ui.text(this, current.answers.get(answer), 14, foreground, false);
+            Ui.addWeight(row, answerText, 1, 10, 0, 4, 0);
+            if (correctAnswer) row.addView(Ui.icon(this, "check", Ui.GREEN, 21));
+            if (wrongSelected) row.addView(Ui.icon(this, "close", Ui.RED, 21));
             answerCard.addView(row);
             if (!quiz.answered) {
                 Ui.clickable(answerCard, view -> answerCurrent(answer));
@@ -773,49 +800,60 @@ public final class MainActivity extends Activity {
                 answerCard.setClickable(false);
             }
             Ui.add(page, answerCard, ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT,
-                    0, 0, 0, 10);
+                    0, 0, 0, 8);
         }
 
         if (quiz.answered && quiz.exam) {
-            TextView accepted = Ui.text(this, "ОТВЕТ ПРИНЯТ", 13, Ui.GREEN, true);
+            TextView accepted = Ui.text(this, "ОТВЕТ ПРИНЯТ", 12, Ui.GREEN, true);
             accepted.setGravity(Gravity.CENTER);
             accepted.setLetterSpacing(0.1f);
             Ui.add(page, accepted, ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT,
-                    0, 5, 0, 12);
+                    0, 4, 0, 8);
         }
 
         if (quiz.answered && !quiz.exam) {
             boolean correct = quiz.selected == current.correct;
             LinearLayout explanation = Ui.card(this);
-            explanation.setBackground(Ui.roundDp(this, correct ? Ui.MINT : Ui.RED_BG, 18));
-            explanation.addView(Ui.text(this, correct ? "Верно!" : "Есть ошибка", 17,
+            explanation.setBackground(Ui.roundDp(this, correct ? Ui.MINT : Ui.RED_BG, 16));
+            explanation.addView(Ui.text(this, correct ? "Верно!" : "Есть ошибка", 16,
                     correct ? Ui.GREEN : Ui.RED, true));
-            Ui.add(explanation, Ui.text(this, current.explanation, 14, Ui.INK, false),
-                    ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT, 0, 8, 0, 0);
+            Ui.add(explanation, Ui.text(this, current.explanation, 13, Ui.INK, false),
+                    ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT, 0, 7, 0, 0);
             Ui.add(explanation, Ui.text(this, current.reference, 11, Ui.MUTED, false),
-                    ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT, 0, 10, 0, 0);
+                    ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT, 0, 9, 0, 0);
             Ui.add(page, explanation, ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT,
-                    0, 6, 0, 14);
+                    0, 5, 0, 8);
         }
 
-        LinearLayout navigation = Ui.row(this);
+        quizScrollView = new ScrollView(this);
+        quizScrollView.setFillViewport(true);
+        quizScrollView.setClipToPadding(false);
+        quizScrollView.addView(page, new ScrollView.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+        screen.addView(quizScrollView, new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, 0, 1));
+
+        LinearLayout footer = Ui.row(this);
+        footer.setPadding(Ui.dp(this, 14), Ui.dp(this, 10), Ui.dp(this, 14), Ui.dp(this, 10));
+        footer.setBackgroundColor(Color.WHITE);
+        footer.setElevation(Ui.dp(this, 16));
         if (quiz.index > 0) {
             Button previous = Ui.button(this, "Назад", false);
             Ui.clickable(previous, view -> jumpToQuestion(quiz.index - 1));
-            Ui.addWeight(navigation, previous, 0.45f, 0, 0, 8, 0);
+            Ui.addWeight(footer, previous, 0.5f, 0, 0, 8, 0);
         }
-        if (quiz.answered) {
-            Button next = Ui.button(this, quiz.index == quiz.questions.size() - 1 ? "Завершить" : "Далее", true);
-            Ui.clickable(next, view -> nextQuestion());
-            Ui.addWeight(navigation, next, 1, 0, 0, 0, 0);
-        } else {
-            TextView hint = Ui.text(this, "Выберите один вариант ответа", 12, Ui.MUTED, false);
-            hint.setGravity(Gravity.CENTER);
-            Ui.addWeight(navigation, hint, 1, 0, 0, 0, 0);
+        Button next = Ui.button(this, quiz.index == quiz.questions.size() - 1 ? "Завершить" : "Далее", true);
+        next.setEnabled(quiz.answered);
+        next.setAlpha(quiz.answered ? 1f : 0.45f);
+        if (quiz.answered) Ui.clickable(next, view -> nextQuestion());
+        Ui.addWeight(footer, next, 1, 0, 0, 0, 0);
+        screen.addView(footer, new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+
+        setScreen("quiz", quiz.backTarget, false, screen);
+        if (previousScrollY > 0) {
+            quizScrollView.post(() -> quizScrollView.scrollTo(0, previousScrollY));
         }
-        Ui.add(page, navigation, ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT,
-                0, 8, 0, 0);
-        setScreen("quiz", quiz.backTarget, false, scrollScreen(page, true));
         if (quiz.exam) timerHandler.postDelayed(timerTick, 1000);
     }
 
@@ -854,17 +892,17 @@ public final class MainActivity extends Activity {
             number.setContentDescription("Вопрос " + (i + 1));
             Ui.clickable(number, view -> jumpToQuestion(questionIndex));
             LinearLayout.LayoutParams params = fitAll
-                    ? new LinearLayout.LayoutParams(0, Ui.dp(this, 40), 1)
-                    : new LinearLayout.LayoutParams(Ui.dp(this, 40), Ui.dp(this, 40));
+                    ? new LinearLayout.LayoutParams(0, Ui.dp(this, 36), 1)
+                    : new LinearLayout.LayoutParams(Ui.dp(this, 36), Ui.dp(this, 36));
             int margin = fitAll ? 3 : 6;
             params.setMargins(0, 0, i == quiz.questions.size() - 1 ? 0 : Ui.dp(this, margin), 0);
             strip.addView(number, params);
         }
         if (fitAll) {
-            Ui.add(page, strip, ViewGroup.LayoutParams.MATCH_PARENT, Ui.dp(this, 48), 0, 0, 0, 16);
+            Ui.add(page, strip, ViewGroup.LayoutParams.MATCH_PARENT, Ui.dp(this, 42), 0, 0, 0, 8);
         } else {
             scroll.addView(strip);
-            Ui.add(page, scroll, ViewGroup.LayoutParams.MATCH_PARENT, Ui.dp(this, 48), 0, 0, 0, 16);
+            Ui.add(page, scroll, ViewGroup.LayoutParams.MATCH_PARENT, Ui.dp(this, 42), 0, 0, 0, 8);
         }
     }
 
@@ -876,6 +914,7 @@ public final class MainActivity extends Activity {
 
     private void jumpToQuestion(int index) {
         if (quiz == null || index < 0 || index >= quiz.questions.size()) return;
+        quizScrollView = null;
         quiz.index = index;
         renderQuiz();
     }

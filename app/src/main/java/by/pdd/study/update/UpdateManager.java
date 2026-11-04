@@ -1,10 +1,10 @@
 package by.pdd.study.update;
 
 import android.app.Activity;
-import android.content.ActivityNotFoundException;
-import android.content.ClipData;
+import android.app.PendingIntent;
 import android.content.Intent;
 import android.content.pm.PackageInfo;
+import android.content.pm.PackageInstaller;
 import android.content.pm.PackageManager;
 import android.net.Uri;
 import android.os.Build;
@@ -23,6 +23,7 @@ import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.InputStreamReader;
+import java.io.OutputStream;
 import java.net.HttpURLConnection;
 import java.net.URL;
 import java.nio.charset.StandardCharsets;
@@ -157,27 +158,45 @@ public final class UpdateManager {
     }
 
     public void install(File apk) {
-        Uri uri = UpdateApkProvider.uriForApk(activity, apk);
-        // MIUI/HyperOS and some AOSP builds do not register ACTION_INSTALL_PACKAGE,
-        // while the standard ACTION_VIEW APK handler is available.
-        if (tryInstall(uri, Intent.ACTION_VIEW)) return;
-        if (tryInstall(uri, Intent.ACTION_INSTALL_PACKAGE)) return;
-        Toast.makeText(activity,
-                "Системный установщик APK не найден или запретил установку. "
-                        + "Проверьте разрешение на установку из этого источника.",
-                Toast.LENGTH_LONG).show();
-    }
-
-    private boolean tryInstall(Uri uri, String action) {
-        Intent intent = new Intent(action);
-        intent.setDataAndType(uri, "application/vnd.android.package-archive");
-        intent.setClipData(ClipData.newRawUri("Verified PDD update", uri));
-        intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION | Intent.FLAG_ACTIVITY_NEW_TASK);
+        PackageInstaller installer = activity.getPackageManager().getPackageInstaller();
+        PackageInstaller.Session session = null;
         try {
-            activity.startActivity(intent);
-            return true;
-        } catch (ActivityNotFoundException | SecurityException exception) {
-            return false;
+            PackageInstaller.SessionParams params = new PackageInstaller.SessionParams(
+                    PackageInstaller.SessionParams.MODE_FULL_INSTALL);
+            params.setAppPackageName(BuildConfig.APPLICATION_ID);
+            int sessionId = installer.createSession(params);
+            session = installer.openSession(sessionId);
+            try (FileInputStream input = new FileInputStream(apk);
+                 OutputStream output = session.openOutput("verified-update.apk")) {
+                byte[] buffer = new byte[64 * 1024];
+                int count;
+                while ((count = input.read(buffer)) != -1) {
+                    output.write(buffer, 0, count);
+                }
+                session.fsync(output);
+            }
+
+            Intent callback = new Intent(activity, UpdateInstallReceiver.class);
+            int pendingFlags = PendingIntent.FLAG_UPDATE_CURRENT;
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                pendingFlags |= PendingIntent.FLAG_MUTABLE;
+            }
+            PendingIntent pendingIntent = PendingIntent.getBroadcast(
+                    activity, sessionId, callback, pendingFlags);
+            session.commit(pendingIntent.getIntentSender());
+        } catch (Exception exception) {
+            if (session != null) {
+                try {
+                    session.abandon();
+                } catch (RuntimeException ignored) {
+                    // The system may already have closed a failed session.
+                }
+            }
+            Toast.makeText(activity,
+                    "Не удалось запустить системный установщик: " + exception.getMessage(),
+                    Toast.LENGTH_LONG).show();
+        } finally {
+            if (session != null) session.close();
         }
     }
 
