@@ -41,7 +41,17 @@ jobs:
         run: chmod +x gradlew
 
       - name: Lint and build signed release
-        run: ./gradlew --no-daemon lintRelease :app:assembleRelease :app:bundleRelease
+        run: |
+          set +e
+          ./gradlew --no-daemon --console=plain lintRelease :app:assembleRelease :app:bundleRelease > build-output.log 2>&1
+          STATUS=$?
+          cat build-output.log
+          if [ "$STATUS" -ne 0 ]; then
+            grep -E -B 2 -A 6 'FAILURE:|error:|What went wrong|Execution failed|SDK location|Exception' build-output.log | tail -80 | while IFS= read -r line; do
+              echo "::error::$line"
+            done
+          fi
+          exit "$STATUS"
 
       - name: Verify APK signature
         run: |
