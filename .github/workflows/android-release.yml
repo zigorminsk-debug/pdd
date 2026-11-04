@@ -1,0 +1,66 @@
+name: Android release
+
+on:
+  push:
+    branches:
+      - main
+      - 'arena/**'
+    tags:
+      - 'v*'
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  validate-build-sign:
+    name: Validate, build and sign
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Validate learning content
+        run: python3 scripts/validate_content.py
+
+      - name: Validate Gradle wrapper
+        uses: gradle/wrapper-validation-action@v3
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Make wrapper executable
+        run: chmod +x gradlew
+
+      - name: Lint and build signed release
+        run: ./gradlew --no-daemon lintRelease :app:assembleRelease :app:bundleRelease
+
+      - name: Verify APK signature
+        run: |
+          APK="app/build/outputs/apk/release/app-release.apk"
+          APKSIGNER="$(find "$ANDROID_HOME/build-tools" -name apksigner -type f | sort -V | tail -1)"
+          test -n "$APKSIGNER"
+          "$APKSIGNER" verify --verbose --print-certs "$APK"
+          EXPECTED="$(grep 'Fingerprint=' signing/certificate-info.txt | cut -d= -f2 | tr -d ':' | tr 'A-F' 'a-f')"
+          "$APKSIGNER" verify --print-certs "$APK" | grep -Fi "$EXPECTED"
+
+      - name: Upload signed APK and AAB
+        uses: actions/upload-artifact@v4
+        with:
+          name: pdd-belarus-${{ github.ref_name }}
+          path: |
+            app/build/outputs/apk/release/app-release.apk
+            app/build/outputs/bundle/release/app-release.aab
+          if-no-files-found: error
+          retention-days: 90

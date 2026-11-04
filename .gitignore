@@ -1,0 +1,21 @@
+# Android / Gradle
+.gradle/
+local.properties
+.idea/
+*.iml
+build/
+app/build/
+.cxx/
+.externalNativeBuild/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Generated release output
+artifacts/
+
+# The signing key is intentionally tracked because this project uses a repository-owned,
+# permanent self-signed release identity. See README.md before publishing publicly.
+!signing/pdd-release.p12
+!keystore.properties

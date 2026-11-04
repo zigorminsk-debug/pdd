@@ -1,0 +1,59 @@
+plugins {
+    id 'com.android.application'
+}
+
+Properties signing = new Properties()
+File signingFile = rootProject.file('keystore.properties')
+if (signingFile.exists()) {
+    signingFile.withInputStream { signing.load(it) }
+}
+
+android {
+    namespace 'by.pdd.study'
+    compileSdk 35
+
+    defaultConfig {
+        applicationId 'by.pdd.study'
+        minSdk 26
+        targetSdk 35
+        versionCode 1
+        versionName '1.0.0'
+    }
+
+    signingConfigs {
+        release {
+            storeFile rootProject.file('signing/pdd-release.p12')
+            storeType 'PKCS12'
+            storePassword signing.getProperty('storePassword', System.getenv('PDD_STORE_PASSWORD'))
+            keyAlias signing.getProperty('keyAlias', 'pdd-belarus')
+            keyPassword signing.getProperty('keyPassword', System.getenv('PDD_KEY_PASSWORD'))
+        }
+    }
+
+    buildTypes {
+        debug {
+            applicationIdSuffix '.debug'
+            versionNameSuffix '-debug'
+        }
+        release {
+            minifyEnabled false
+            shrinkResources false
+            signingConfig signingConfigs.release
+            proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
+        }
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+
+    buildFeatures {
+        buildConfig true
+    }
+
+    lint {
+        abortOnError true
+        checkReleaseBuilds true
+    }
+}

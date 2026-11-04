@@ -1,0 +1,4 @@
+sha256 Fingerprint=9B:93:EB:11:9A:39:FF:7E:A8:AB:3D:AD:54:39:6A:4A:1F:89:31:2F:93:97:CC:15:99:FC:87:AA:02:0B:F5:52
+subject=CN = PDD Belarus, OU = Mobile, O = PDD Study, L = Minsk, C = BY
+notBefore=Nov  4 14:37:57 2026 GMT
+notAfter=Mar 22 14:37:57 2054 GMT
