@@ -72,10 +72,24 @@ jobs:
           EXPECTED="$(grep 'Fingerprint=' signing/certificate-info.txt | cut -d= -f2 | tr -d ':' | tr 'A-F' 'a-f')"
           "$APKSIGNER" verify --print-certs "$APK" | grep -Fi "$EXPECTED"
 
+      - name: Resolve update release tag
+        if: github.event_name == 'push' || inputs.publish_release
+        id: release_info
+        run: |
+          TAG="${{ inputs.release_tag }}"
+          if [ "${{ github.ref_type }}" = "tag" ]; then
+            TAG="${{ github.ref_name }}"
+          fi
+          if [ -z "$TAG" ]; then
+            TAG="v$(grep '^versionName=' version.properties | cut -d= -f2)"
+          fi
+          case "$TAG" in v*) ;; *) echo "Release tag must start with v" >&2; exit 1;; esac
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+
       - name: Build in-app update metadata
-        if: (github.ref_type == 'tag' && startsWith(github.ref_name, 'v')) || inputs.publish_release
+        if: github.event_name == 'push' || inputs.publish_release
         env:
-          RELEASE_TAG: ${{ github.ref_type == 'tag' && github.ref_name || inputs.release_tag }}
+          RELEASE_TAG: ${{ steps.release_info.outputs.tag }}
         run: |
           test -n "$RELEASE_TAG"
           python3 scripts/create_update_metadata.py \
@@ -85,10 +99,10 @@ jobs:
             --output app/build/outputs/update.json
 
       - name: Publish release for in-app updates
-        if: (github.ref_type == 'tag' && startsWith(github.ref_name, 'v')) || inputs.publish_release
+        if: github.event_name == 'push' || inputs.publish_release
         uses: softprops/action-gh-release@v2
         env:
-          RELEASE_TAG: ${{ github.ref_type == 'tag' && github.ref_name || inputs.release_tag }}
+          RELEASE_TAG: ${{ steps.release_info.outputs.tag }}
         with:
           tag_name: ${{ env.RELEASE_TAG }}
           target_commitish: ${{ github.sha }}

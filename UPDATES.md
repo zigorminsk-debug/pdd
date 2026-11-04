@@ -37,7 +37,7 @@ https://github.com/zigorminsk-debug/pdd/releases/latest/download/update.json
 
 1. Увеличить `versionCode` минимум на 1 и обновить `versionName` в `version.properties`.
 2. Заполнить `RELEASE_NOTES.md`.
-3. Создать тег `vX.Y.Z` или вручную запустить **Android release** с `publish_release=true` и `release_tag=vX.Y.Z`.
+3. Отправить изменения в `main` или `arena/*`: workflow сам сформирует тег `vX.Y.Z` из `versionName`. Также поддерживаются push тега и ручной запуск **Android release** с `publish_release=true` и `release_tag=vX.Y.Z`.
 4. Дождаться зелёного workflow и проверить, что Release содержит `app-release.apk`, `app-release.aab`, `update.json`.
 
 Не публиковать Release с тем же `versionCode`: такое обновление не будет предложено. Не менять `applicationId` или подпись — иначе Android и дополнительная проверка приложения отклонят обновление.

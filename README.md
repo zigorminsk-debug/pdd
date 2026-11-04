@@ -70,7 +70,7 @@ Workflow [`.github/workflows/android-release.yml`](.github/workflows/android-rel
 
 1. увеличьте `versionCode` и `versionName` в `version.properties`;
 2. обновите `RELEASE_NOTES.md`;
-3. создайте тег `vX.Y.Z` или запустите workflow вручную с `publish_release=true` и тем же тегом.
+3. отправьте изменения в `main` или рабочую `arena/*` ветку — workflow сам возьмёт тег `vX.Y.Z` из `versionName` и опубликует релиз. Можно также использовать тег Git или ручной запуск с `publish_release=true`.
 
 Workflow опубликует APK, AAB и `update.json` в GitHub Release. Скрипт `scripts/create_update_metadata.py` сам рассчитывает SHA-256 APK и URL скачивания. Приложение видит только самый новый публичный нечерновой релиз.
 
