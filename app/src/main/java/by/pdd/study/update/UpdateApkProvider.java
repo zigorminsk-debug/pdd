@@ -51,7 +51,7 @@ public final class UpdateApkProvider extends ContentProvider {
             throw new FileNotFoundException("Invalid APK name");
         }
         try {
-            File directory = updatesDirectory(requireContext()).getCanonicalFile();
+            File directory = updatesDirectory(contextOrThrow()).getCanonicalFile();
             File file = new File(directory, name).getCanonicalFile();
             if (!directory.equals(file.getParentFile()) || !file.isFile()) {
                 throw new FileNotFoundException("APK not found");
@@ -62,7 +62,7 @@ public final class UpdateApkProvider extends ContentProvider {
         }
     }
 
-    private Context requireContext() {
+    private Context contextOrThrow() {
         Context context = getContext();
         if (context == null) throw new IllegalStateException("Provider is not attached");
         return context;
