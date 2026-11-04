@@ -167,7 +167,7 @@ public final class UpdateManager {
             int sessionId = installer.createSession(params);
             session = installer.openSession(sessionId);
             try (FileInputStream input = new FileInputStream(apk);
-                 OutputStream output = session.openOutput("verified-update.apk")) {
+                 OutputStream output = session.openWrite("verified-update.apk", 0, apk.length())) {
                 byte[] buffer = new byte[64 * 1024];
                 int count;
                 while ((count = input.read(buffer)) != -1) {
