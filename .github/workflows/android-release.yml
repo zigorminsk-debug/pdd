@@ -63,6 +63,15 @@ jobs:
           fi
           exit "$STATUS"
 
+      - name: Upload build log on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-log-${{ github.run_number }}
+          path: build-output.log
+          if-no-files-found: warn
+          retention-days: 14
+
       - name: Verify APK signature
         run: |
           APK="app/build/outputs/apk/release/app-release.apk"
